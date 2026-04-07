@@ -394,7 +394,7 @@ def define_model(model_name, bulk_species, param_species,
                  high_res_method = None, alpha_high_res_option = 'log',
                  fix_alpha_high_res = False, fix_W_conv_high_res = False, 
                  fix_beta_high_res = True, fix_Delta_phi_high_res = True,
-                 lognormal_logwidth_free = False,
+                 lognormal_logwidth_free = False, multiphase_shared_params = [],
                  ):
     '''
     Create the model dictionary defining the configuration of the user-specified 
@@ -666,7 +666,7 @@ def define_model(model_name, bulk_species, param_species,
                                       fix_alpha_high_res, fix_W_conv_high_res, 
                                       fix_beta_high_res, fix_Delta_phi_high_res,
                                       lognormal_logwidth_free)
-
+    
     # Package model properties
     model = {'model_name': model_name, 'object_type': object_type,
              'Atmosphere_dimension': Atmosphere_dimension,
@@ -707,6 +707,7 @@ def define_model(model_name, bulk_species, param_species,
              'high_res_method': high_res_method,
              'high_res_param_names': high_res_param_names,
              'lognormal_logwidth_free' : lognormal_logwidth_free,
+             'multiphase_shared_params': multiphase_shared_params,
              }
 
             
@@ -1201,7 +1202,10 @@ def check_atmosphere_physical(atmosphere, opac):
             T_fine_max = np.max(T_fine)
     
             # Check if minimum or maximum temperatures are outside opacity range
-            if ((T_max > T_fine_max) or (T_min < T_fine_min)): 
+            if ((T_max > T_fine_max) or (T_min < T_fine_min)):
+                print("Atmosphere non-physical: Temperatures outside opac bounds")
+                print("{:.0f} K".format(T_min))
+                print("{:.0f} K".format(T_max))
                 return False
 
             else:

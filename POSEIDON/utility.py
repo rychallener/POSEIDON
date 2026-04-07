@@ -1715,16 +1715,33 @@ def write_MultiNest_results(planet, model, data, retrieval_name,
     # Unpack planet name
     planet_name = planet['planet_name']
 
+    N_phase = len(data)
+
     # Unpack number of free parameters
-    param_names = model['param_names']
+    _param_names = model['param_names']
+    multiphase_shared_params = model['multiphase_shared_params']
+    
+    shared_param_idx = []
+    for p in multiphase_shared_params:
+        midx = np.where(p == _param_names)[0][0]
+        shared_param_idx.append(midx)
+
+    nonshared_param_idx = np.delete(np.arange(len(_param_names)),
+                                    shared_param_idx)
+
+    nonshared_param_names = _param_names[nonshared_param_idx]
+
+    param_names = np.concatenate((_param_names,
+                                  np.tile(nonshared_param_names, N_phase-1)))
+        
     n_params = len(param_names)
 
     # Unpack data properties
     if model['high_res_method'] is None:
-        err_data = data['err_data']
-        ydata = data['ydata']
-        instruments = data['instruments']
-        datasets = data['datasets']
+        err_data = np.concatenate([a['err_data'] for a in data])
+        ydata = np.concatenate([a['ydata'] for a in data])
+        instruments = np.concatenate([a['instruments'] for a in data])
+        datasets = np.concatenate([a['datasets'] for a in data])
     else:
         instruments = None
         datasets = None
@@ -1753,16 +1770,18 @@ def write_MultiNest_results(planet, model, data, retrieval_name,
     max_likelihood = best_fit['log_likelihood']
     best_fit_params = best_fit['parameters']
     
-    # Load values for error inflation parameters (if included in model)
-    _, _, _, _, _, _, _, \
-    err_inflation_params, _ = split_params(best_fit_params, N_params_cum)
-    
     if (model['high_res_method'] is None):
+
+        # Load values for error inflation parameters (if included in model)
+        _, _, _, _, _, _, _, \
+            err_inflation_params, _ = split_params(best_fit_params, N_params_cum)
       
         # Calculate the normalisation term for the log-likelihood
         if (error_inflation == None):
             norm_log = (-0.5*np.log(2.0*np.pi*err_data*err_data)).sum()
         else:
+            if len(ymodel_best) > 0:
+                raise Exception("Error inflation not yet supported in multiphase retrievals.")
             if (error_inflation == 'Line15'):
                 err_eff_sq = (err_data*err_data + np.power(10.0, err_inflation_params[0]))
                 norm_log = (-0.5*np.log(2.0*np.pi*err_eff_sq)).sum()

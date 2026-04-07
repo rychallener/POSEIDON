@@ -751,10 +751,10 @@ def loglikelihood_sysrem(V_sys, K_p, d_phi, a, b, wl, planet_spectrum, data, sta
 
 
 def loglikelihood_high_res(wl, planet_spectrum, star_spectrum, data,
-                        spectrum_type, method, high_res_params, high_res_param_names):
+                           spectrum_type, method, high_res_params, high_res_param_names):
     """
     Return the loglikelihood given the observed flux, Keplerian velocity, and centered system velocity.
-    Should only use this function in a high resolutional rerieval.
+    Should only use this function in a high resolutional retrieval.
 
     Args:
         wl (np.array of float):

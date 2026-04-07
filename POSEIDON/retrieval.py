@@ -27,6 +27,7 @@ from .stellar import precompute_stellar_spectra, stellar_contamination_general
 from .high_res import loglikelihood_high_res
 from .chemistry import load_chemistry_grid
 from .transmission import area_overlap_circles
+from .multiphase import apply_shared_params, phase_cube
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -35,7 +36,7 @@ rank = comm.Get_rank()
 allowed_simplex = 1
 
 
-def run_retrieval(planet, star, model, opac, data, priors, wl, P, 
+def run_retrieval(planet, star, model, opac, data_objs, priors, wl, P, 
                   P_ref = None, R_p_ref = None, P_param_set = 1.0e-2, 
                   R = None, retrieval_name = None, He_fraction = 0.17, 
                   N_slice_EM = 2, N_slice_DN = 4, constant_gravity = False,
@@ -44,7 +45,7 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
                   N_live = 400, ev_tol = 0.5, sampling_algorithm = 'MultiNest', 
                   resume = False, verbose = True, sampling_target = 'parameter',
                   chem_grid = 'fastchem', N_output_samples = 1000,
-                  save_ymodel = False,
+                  save_ymodel = False, 
                   ):
     '''
     ADD DOCSTRING (will hopefully be done before the heat death of the Universe)
@@ -67,6 +68,9 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
     disable_atmosphere = model['disable_atmosphere']
     X_profile = model['X_profile']
     high_res_method = model['high_res_method']
+    multiphase_shared_params = model['multiphase_shared_params']
+
+    N_phase = len(data_objs)
 
     # Unpack stellar properties
     if (star is not None):
@@ -147,6 +151,7 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
     if (sampling_algorithm == 'MultiNest'):
 
         # Change directory into MultiNest result file folder
+        cwd = os.getcwd()
         os.chdir(output_dir + 'MultiNest_raw/')
 
         # Set basename for MultiNest output files
@@ -156,20 +161,22 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
         if (rank == 0):
             t0 = time.perf_counter()
 
+        #const_efficiency_mode = N_phase > 1
+
         # Run MultiNest
-        PyMultiNest_retrieval(planet, star, model, opac, data, prior_types, 
-                               prior_ranges, spectrum_type, wl, P, P_ref,
-                               R_p_ref, P_param_set, He_fraction, N_slice_EM, 
-                               N_slice_DN, N_params, T_phot_grid, T_het_grid, 
-                               log_g_phot_grid, log_g_het_grid, I_phot_grid, 
-                               I_het_grid, y_p, F_s_obs, constant_gravity,
-                               chemistry_grid, resume = resume, verbose = verbose,
-                               outputfiles_basename = basename, 
-                               n_live_points = N_live, multimodal = False,
-                               evidence_tolerance = ev_tol, log_zero = -1e90,
-                               importance_nested_sampling = False, 
-                               sampling_efficiency = sampling_target, 
-                               const_efficiency_mode = False)
+        PyMultiNest_retrieval(planet, star, model, opac, data_objs, prior_types, 
+                              prior_ranges, spectrum_type, wl, P, P_ref,
+                              R_p_ref, P_param_set, He_fraction, N_slice_EM, 
+                              N_slice_DN, N_params, T_phot_grid, T_het_grid, 
+                              log_g_phot_grid, log_g_het_grid, I_phot_grid, 
+                              I_het_grid, y_p, F_s_obs, constant_gravity,
+                              chemistry_grid, resume = resume, verbose = verbose,
+                              outputfiles_basename = basename, 
+                              n_live_points = N_live, multimodal = False,
+                              evidence_tolerance = ev_tol, log_zero = -1e90,
+                              importance_nested_sampling = False, 
+                              sampling_efficiency = sampling_target, 
+                              const_efficiency_mode = False)
 
         # Write retrieval results to file
         if (rank == 0):
@@ -179,7 +186,7 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
             total = round_sig_figs((t1-t0)/3600.0, 2)  # Round to 2 significant figures
             
             print('POSEIDON retrieval finished in ' + str(total) + ' hours')
-
+            
             # Compute samples of retrieved P-T, mixing ratio profiles, and spectrum
             T_low2, T_low1, T_median, \
             T_high1, T_high2, \
@@ -190,7 +197,7 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
             spec_median, spec_high1, \
             spec_high2, T_best, \
             spectrum_best, ymodel_best, \
-            ymodel_samples = retrieved_samples(planet, star, model, opac, data,
+            ymodel_samples = retrieved_samples(planet, star, model, opac, data_objs,
                                                retrieval_name, wl, P, P_ref, R_p_ref,
                                                P_param_set, He_fraction, N_slice_EM, 
                                                N_slice_DN, spectrum_type, T_phot_grid, 
@@ -198,42 +205,51 @@ def run_retrieval(planet, star, model, opac, data, priors, wl, P,
                                                log_g_het_grid, I_phot_grid, 
                                                I_het_grid, y_p, F_s_obs,
                                                constant_gravity, chemistry_grid,
-                                               N_output_samples)
-            
-            # Write POSEIDON retrieval output files 
-            write_MultiNest_results(planet, model, data, retrieval_name,
+                                               N_output_samples, multiphase_shared_params)
+
+            # Write POSEIDON retrieval output files
+            # Note: this function doesn't handle ymodel_best correctly for
+            # multiphase retrievals and raises an Exception if you try
+            # to do error inflation with multiphase.
+            write_MultiNest_results(planet, model, data_objs, retrieval_name,
                                     N_live, ev_tol, sampling_algorithm, wl, R,
-                                    ymodel_best, spectrum_type)
-                        
-            # Save sampled spectrum
-            write_retrieved_spectrum(retrieval_name, wl, spec_low2, 
-                                     spec_low1, spec_median, spec_high1, spec_high2)
-            
-            # Save ymodel samples
-            if (save_ymodel == True):
+                                    ymodel_best[0], spectrum_type)
 
-                ymodel_samples_object = np.array(ymodel_samples).T
+            for i in range(N_phase):
+                # Save sampled spectrum
+                if N_phase > 1:
+                    phase_name = retrieval_name + '-phase{}'.format(i)
+                else:
+                    phase_name = retrieval_name
+                
+                write_retrieved_spectrum(phase_name, wl, spec_low2[i], 
+                                         spec_low1[i], spec_median[i], spec_high1[i], spec_high2[i])
 
-                np.savetxt('../samples/' + retrieval_name + '_ymodel_samples.txt', ymodel_samples_object.T)
-            
-            # Only write retrieved P-T profile and mixing ratio arrays if atmosphere enabled
-            if (disable_atmosphere == False):
+                # Save ymodel samples
+                if (save_ymodel == True):
 
-                # Save sampled P-T profile
-                write_retrieved_PT(retrieval_name, P, T_low2, T_low1, 
-                                   T_median, T_high1, T_high2)
+                    ymodel_samples_object = np.array(ymodel_samples[i]).T
 
-                # Save sampled mixing ratio profiles
-                write_retrieved_log_X(retrieval_name, chemical_species, P, 
-                                      log_X_low2, log_X_low1, log_X_median, 
-                                      log_X_high1, log_X_high2)
+                    np.savetxt('../samples/' + phase_name + '_ymodel_samples.txt', ymodel_samples_object.T)
+
+                # Only write retrieved P-T profile and mixing ratio arrays if atmosphere enabled
+                if (disable_atmosphere == False):
+
+                    # Save sampled P-T profile
+                    write_retrieved_PT(phase_name, P, T_low2[i], T_low1[i], 
+                                       T_median[i], T_high1[i], T_high2[i])
+
+                    # Save sampled mixing ratio profiles
+                    write_retrieved_log_X(phase_name, chemical_species, P, 
+                                          log_X_low2[i], log_X_low1[i], log_X_median[i], 
+                                          log_X_high1[i], log_X_high2[i])
 
             print("All done! Output files can be found in " + output_dir + "results/")
 
     comm.Barrier()
 
     # Change directory back to directory where user's python script is located
-    os.chdir('../../../../')
+    os.chdir(cwd)
 
 
 def forward_model(param_vector, planet, star, model, opac, data, wl, P, P_ref_set,
@@ -589,7 +605,7 @@ def CLR_Prior(chem_params_drawn, limit = -12.0):
         return (np.ones(n+1)*(-50.0))    # Fails check -> return dummy array of log values
 
 
-def PyMultiNest_retrieval(planet, star, model, opac, data, prior_types, 
+def PyMultiNest_retrieval(planet, star, model, opac, data_objs, prior_types, 
                           prior_ranges, spectrum_type, wl, P, P_ref_set, 
                           R_p_ref_set, P_param_set, He_fraction, N_slice_EM, 
                           N_slice_DN, N_params, T_phot_grid, T_het_grid, 
@@ -600,7 +616,10 @@ def PyMultiNest_retrieval(planet, star, model, opac, data, prior_types,
     Main function for conducting atmospheric retrievals with PyMultiNest.
     
     '''
-
+    st = time.time()
+    # Check for multiphase retrieval
+    N_phase = len(data_objs)
+        
     # Unpack model properties
     param_names = model['param_names']
     param_species = model['param_species']
@@ -616,21 +635,41 @@ def PyMultiNest_retrieval(planet, star, model, opac, data, prior_types,
     PT_penalty = model['PT_penalty']
     high_res_method = model['high_res_method']
     high_res_param_names = model['high_res_param_names']
-    
-   # R_p = planet["planet_radius"]
-   # d = planet["system_distance"]
-   # R_s = star["R_s"]
+    multiphase_shared_params = model['multiphase_shared_params']
 
     # Unpack number of free mixing ratio parameters for prior function  
     N_species_params = len(X_params)
 
     # Assign PyMultiNest keyword arguments
-    n_dims = N_params
+    # Don't want to have PyMultiNest explore extra uninformative params
+    N_shared = len(multiphase_shared_params)
+    n_dims = N_phase * (N_params - N_shared) + N_shared
+
+    # Cumulative number of free parameters per phase
+    mpcum = [N_params_cum[-1]] # First phase has all free params
+    for i in range(1, N_phase):
+        # Rest of phases have nshared less free params
+        mpcum.append(mpcum[i-1] + N_params_cum[-1] - N_shared)
+
+    # Identify shared and non-shared parameter indices
+    shared_param_idx = []
+    for p in multiphase_shared_params:
+        midx = np.where(p == param_names)[0][0]
+        shared_param_idx.append(midx)
+
+    nonshared_param_idx = np.delete(np.arange(N_params), shared_param_idx)
+
+    # Parameter names of free parameters for each phase 
+    mp_param_names = [param_names]
+    for i in range(1, N_phase):
+        mp_param_names.append(param_names[nonshared_param_idx])
 
     # Pre-compute normalisation for log-likelihood
     if (high_res_method is None):   # Not needed for high-res retrievals
-        err_data = data["err_data"]
-        norm_log_default = (-0.5 * np.log(2.0 * np.pi * err_data * err_data)).sum()
+        norm_log_default = []
+        for d in data_objs:
+            err_data = d["err_data"]
+            norm_log_default.append((-0.5 * np.log(2.0 * np.pi * err_data * err_data)).sum())
 
     # Create variable governing if a mixing ratio parameter combination lies in 
     # the allowed CLR simplex space (X_i > 10^-12 and sum to 1)
@@ -639,13 +678,13 @@ def PyMultiNest_retrieval(planet, star, model, opac, data, prior_types,
     allowed_simplex = 1    # Only changes to 0 for CLR variables outside prior
 
     # Define the prior transformation function
-    def Prior(cube, ndim, nparams):
+    def Prior(cube, ndim, nparams, param_names):
         ''' 
         Transforms the unit cube provided by MultiNest into the values of 
         each free parameter used by the forward model.
         
         '''
-
+        
         # Assign prior distribution to each free parameter
         for i, parameter in enumerate(param_names):
 
@@ -903,10 +942,11 @@ def PyMultiNest_retrieval(planet, star, model, opac, data, prior_types,
             cube[N_params_cum[2]+np.where(np.char.find(cloud_param_names,'f_aerosol_1')!= -1)[0][0]] = f_aerosol_1
             cube[N_params_cum[2]+np.where(np.char.find(cloud_param_names,'f_aerosol_2')!= -1)[0][0]] = f_aerosol_2
             cube[N_params_cum[2]+np.where(np.char.find(cloud_param_names,'f_clear')!= -1)[0][0]] = f_clear
-      
+
+        return cube
             
     # Define the log-likelihood function
-    def LogLikelihood(cube, ndim, nparams):
+    def LogLikelihood(cube, ndim, nparams, iphase):
         ''' 
         Evaluates the log-likelihood for a given point in parameter space.
         
@@ -919,7 +959,6 @@ def PyMultiNest_retrieval(planet, star, model, opac, data, prior_types,
         the binned spectrum and the actual data points. 
         
         '''
-        
         #***** Check for non-allowed parameter values *****#
 
         # Immediately reject samples falling outside of mixing ratio simplex (CLR prior only)
@@ -946,14 +985,14 @@ def PyMultiNest_retrieval(planet, star, model, opac, data, prior_types,
                 return loglikelihood
 
         #***** For valid parameter combinations, run forward model *****#
-
+        data = data_objs[iphase]
         ymodel, spectrum, _, ln_prior_TP = forward_model(cube, planet, star, model, opac, data, 
-                                                        wl, P, P_ref_set, R_p_ref_set, P_param_set, 
-                                                        He_fraction, N_slice_EM, N_slice_DN, 
-                                                        spectrum_type, T_phot_grid, T_het_grid, 
-                                                        log_g_phot_grid, log_g_het_grid,
-                                                        I_phot_grid, I_het_grid, y_p, F_s_obs,
-                                                        constant_gravity, chemistry_grid)
+                                                         wl, P, P_ref_set, R_p_ref_set, P_param_set, 
+                                                         He_fraction, N_slice_EM, N_slice_DN, 
+                                                         spectrum_type, T_phot_grid, T_het_grid, 
+                                                         log_g_phot_grid, log_g_het_grid,
+                                                         I_phot_grid, I_het_grid, y_p, F_s_obs,
+                                                         constant_gravity, chemistry_grid)
 
         # Reject unphysical spectra (forced to be NaN by function above)
         if (np.any(np.isnan(spectrum))):
@@ -989,7 +1028,7 @@ def PyMultiNest_retrieval(planet, star, model, opac, data, prior_types,
         # Compute effective error, if unknown systematics included
         if (error_inflation == None):
             err_eff_sq = err_data*err_data
-            norm_log = norm_log_default
+            norm_log = norm_log_default[iphase]
         else:
             if (error_inflation == 'Line15'):
                 err_eff_sq = (err_data*err_data + np.power(10.0, err_inflation_params[0]))
@@ -1067,7 +1106,6 @@ def PyMultiNest_retrieval(planet, star, model, opac, data, prior_types,
             ydata_adjusted = ydata
 
         #***** Calculate ln(likelihood) ****#
-    
         loglikelihood = (-0.5*((ymodel - ydata_adjusted)**2)/err_eff_sq).sum()
         loglikelihood += norm_log
 
@@ -1075,17 +1113,69 @@ def PyMultiNest_retrieval(planet, star, model, opac, data, prior_types,
         loglikelihood += ln_prior_TP
                     
         return loglikelihood
-    
+
+    # A wrapper for calling Loglikelihood multiple times for multiphase retrievals
+    def LogLikelihood_wrapper(cube, ndim, nparams):
+        it = time.time()
+        loglikelihood = 0.0
+
+        # Cube with shared parameters inserted
+        scube = apply_shared_params(cube, N_phase, N_params,
+                                    shared_param_idx=shared_param_idx)
+
+        #print("Set up params: {:.2f}".format(time.time() - it))
+
+        for i in range(N_phase):
+            it = time.time()
+            istart =  i      * N_params
+            iend   = (i + 1) * N_params
+            pcube = scube[istart:iend]
+            llh = LogLikelihood(pcube, ndim, nparams, i)
+            loglikelihood += llh
+            #if llh < -1e90:
+                #print("Problem with {}".format(i))
+            #print("Loglikelihood {}: {} s".format(i, time.time() - it))
+            # Can stop if any of the models fail to save some time
+            #print(i, loglikelihood)
+            #if loglikelihood < -1e90:
+                #return loglikelihood
+
+        #print(loglikelihood)
+        return loglikelihood
+
+    # A wrapper for Prior that loops over the phases.  This function
+    # has no return so it must modify cube in place, meaning it cannot
+    # insert the shared parameters. Therefore, shared parameters are
+    # handled in Loglikelihood_wrapper()
+    def Prior_wrapper(cube, ndim, nparams):
+        for i in range(N_phase):
+            it = time.time()
+            if i == 0:
+                istart = 0
+                iend   = mpcum[i]
+            else:
+                istart = mpcum[i-1]
+                iend   = mpcum[i]
+
+            conv = Prior(cube[istart:iend], ndim, nparams, mp_param_names[i])
+                             
+            # Done this way to appease MultiNest typing
+            for j,k in enumerate(range(istart, iend)):
+                cube[k] = conv[j]
+
+            #print("Prior convert {}: {:.2f} s".format(i, time.time() - it))
+
+    print("Setup PyMultiNest: {:.2f} s".format(time.time() - st))
     # Run PyMultiNest
-    pymultinest.run(LogLikelihood, Prior, n_dims, **kwargs)
+    pymultinest.run(LogLikelihood_wrapper, Prior_wrapper, n_dims, **kwargs)
 
 
-def retrieved_samples(planet, star, model, opac, data, retrieval_name, wl, P, 
+def retrieved_samples(planet, star, model, opac, data_objs, retrieval_name, wl, P, 
                       P_ref_set, R_p_ref_set, P_param_set, He_fraction, 
                       N_slice_EM, N_slice_DN, spectrum_type, T_phot_grid, 
                       T_het_grid, log_g_phot_grid, log_g_het_grid, I_phot_grid, 
                       I_het_grid, y_p, F_s_obs, constant_gravity, 
-                      chemistry_grid, N_output_samples):
+                      chemistry_grid, N_output_samples, multiphase_shared_params):
     '''
     ADD DOCSTRING
     '''
@@ -1093,9 +1183,27 @@ def retrieved_samples(planet, star, model, opac, data, retrieval_name, wl, P,
     # Load relevant output directory
     output_prefix = retrieval_name + '-'
 
+    # Get number of phases
+    N_phase = len(data_objs)
+
     # Unpack number of free parameters
-    param_names = model['param_names']
+    _param_names = model['param_names']
+    
+    shared_param_idx = []
+    for p in multiphase_shared_params:
+        midx = np.where(p == _param_names)[0][0]
+        shared_param_idx.append(midx)
+
+    nonshared_param_idx = np.delete(np.arange(len(_param_names)),
+                                    shared_param_idx)
+
+    nonshared_param_names = _param_names[nonshared_param_idx]
+
+    param_names = np.concatenate((_param_names,
+                                  np.tile(nonshared_param_names, N_phase-1)))
+        
     n_params = len(param_names)
+    n_params_per_model = len(model['param_names'])
 
     # Unpack model properties
     disable_atmosphere = model['disable_atmosphere']
@@ -1107,7 +1215,9 @@ def retrieved_samples(planet, star, model, opac, data, retrieval_name, wl, P,
 
     # Store best-fitting set of parameters
     best_fit = analyzer.get_best_fit()
-    best_fit_params = best_fit['parameters']
+    best_fit_params = apply_shared_params(best_fit['parameters'],
+                                          N_phase, n_params_per_model,
+                                          shared_param_idx=shared_param_idx)
 
     # Find total number of available posterior samples from MultiNest 
     N_samples_total = len(samples[:,0])
@@ -1118,120 +1228,163 @@ def retrieved_samples(planet, star, model, opac, data, retrieval_name, wl, P,
 
     print("Now generating " + str(N_sample_draws) + " sampled spectra and " + 
           "P-T profiles from the posterior distribution...")
+
+    # Output lists
+    all_T_low2, all_T_low1, all_T_median, all_T_high1, all_T_high2 = \
+        [], [], [], [], []
+    all_log_X_low2, all_log_X_low1, all_log_X_median, all_log_X_high1, all_log_X_high2 = \
+        [], [], [], [], []
+    all_spec_low2, all_spec_low1, all_spec_median, all_spec_high1, all_spec_high2 = \
+        [], [], [], [], []
+    all_T_best, all_spectrum_best, all_ymodel_best, all_ymodel_samples = \
+        [], [], [], []
     
-    # Calculate best-fitting spectrum and PT profile
-    ymodel_best, spectrum_best, \
-    atmosphere_best, _ = forward_model(best_fit_params, planet, star, model, opac, data, 
-                                       wl, P, P_ref_set, R_p_ref_set, P_param_set, 
-                                       He_fraction, N_slice_EM, N_slice_DN, 
-                                       spectrum_type, T_phot_grid, T_het_grid, 
-                                       log_g_phot_grid, log_g_het_grid,
-                                       I_phot_grid, I_het_grid, y_p, F_s_obs,
-                                       constant_gravity, chemistry_grid)
-    
-    # Store temperature field and mixing ratios for the best model
-    if (disable_atmosphere == False):
+    # Calculate best-fitting spectrum and PT profile at each phase
+    for idata, data in enumerate(data_objs):
+        p_best_fit_params = phase_cube(best_fit_params, idata, n_params_per_model)
+        
+        ymodel_best, spectrum_best, \
+        atmosphere_best, _ = forward_model(best_fit_params, planet, star, model, opac, data, 
+                                           wl, P, P_ref_set, R_p_ref_set, P_param_set, 
+                                           He_fraction, N_slice_EM, N_slice_DN, 
+                                           spectrum_type, T_phot_grid, T_het_grid, 
+                                           log_g_phot_grid, log_g_het_grid,
+                                           I_phot_grid, I_het_grid, y_p, F_s_obs,
+                                           constant_gravity, chemistry_grid)
 
-        T_best = atmosphere_best['T']
-        log_X_best = np.log10(atmosphere_best['X'])
-
-    else:
-        T_best = 0.0
-                    
-    # For all the samples, generate spectra and PT profiles
-    for i in range(N_sample_draws):
-
-        # Estimate run time for this function based on one model evaluation
-        if (i == 0):
-            t0 = time.perf_counter()   # Time how long one model takes
-
-        param_vector = samples[sample[i],:]
-
-        ymodel, spectrum, \
-        atmosphere, _ = forward_model(param_vector, planet, star, model, opac, data, 
-                                      wl, P, P_ref_set, R_p_ref_set, P_param_set, 
-                                      He_fraction, N_slice_EM, N_slice_DN, 
-                                      spectrum_type, T_phot_grid, T_het_grid, 
-                                      log_g_phot_grid, log_g_het_grid,
-                                      I_phot_grid, I_het_grid, y_p, F_s_obs,
-                                      constant_gravity, chemistry_grid)
-
-        # Based on first model, create arrays to store retrieved temperature, spectrum, and mixing ratios
-        if (i == 0):
-
-            # Estimate run time for this function based on one model evaluation
-            t1 = time.perf_counter()
-            total = round_sig_figs((N_sample_draws * (t1-t0)/60.0), 2)  # Round to 2 significant figures
-            
-            print('This process will take approximately ' + str(total) + ' minutes')
-
-            # Only store T and log X if an atmosphere enabled
-            if (disable_atmosphere == False):
-
-                # Find size of mixing ratio field (same as temperature field)
-                N_species, N_D, N_sectors, N_zones = np.shape(atmosphere['X'])
-
-                # Create arrays to store sampled retrieval outputs
-                T_stored = np.zeros(shape=(N_sample_draws, N_D, N_sectors, N_zones))
-                log_X_stored = np.zeros(shape=(N_sample_draws, N_species, N_D, N_sectors, N_zones))
-
-            spectrum_stored = np.zeros(shape=(N_sample_draws, len(wl)))
-
-            if model['high_res_method'] is None:
-                ymodel_samples = np.zeros(shape=(N_sample_draws, len(ymodel)))
-
+        # Store temperature field and mixing ratios for the best model
         if (disable_atmosphere == False):
 
-            # Store temperature field and mixing ratios in sample arrays
-            T_stored[i,:,:,:] = atmosphere['T']
-            log_X_stored[i,:,:,:,:] = np.log10(atmosphere['X'])
+            T_best = atmosphere_best['T']
+            log_X_best = np.log10(atmosphere_best['X'])
 
-        # Store spectrum in sample array
-        spectrum_stored[i,:] = spectrum
+        else:
+            T_best = 0.0
 
-        if model['high_res_method'] is None:
-            ymodel_samples[i,:] = ymodel
-            
-    # Compute 1 and 2 sigma confidence intervals for P-T and mixing ratio profiles and spectrum
+        # For all the samples, generate spectra and PT profiles
+        for i in range(N_sample_draws):
+
+            # Estimate run time for this function based on one model evaluation
+            if (i == 0):
+                t0 = time.perf_counter()   # Time how long one model takes
+
+            mp_param_vector = samples[sample[i],:]
+            mp_param_vector = apply_shared_params(mp_param_vector,
+                                                  N_phase,
+                                                  n_params_per_model,
+                                                  shared_param_idx=shared_param_idx)
+            p_param_vector = phase_cube(mp_param_vector, idata, n_params_per_model)
+
+            ymodel, spectrum, \
+            atmosphere, _ = forward_model(p_param_vector, planet, star, model, opac, data, 
+                                          wl, P, P_ref_set, R_p_ref_set, P_param_set, 
+                                          He_fraction, N_slice_EM, N_slice_DN, 
+                                          spectrum_type, T_phot_grid, T_het_grid, 
+                                          log_g_phot_grid, log_g_het_grid,
+                                          I_phot_grid, I_het_grid, y_p, F_s_obs,
+                                          constant_gravity, chemistry_grid)
+
+            # Based on first model, create arrays to store retrieved temperature, spectrum, and mixing ratios
+            if (i == 0):
+
+                # Estimate run time for this function based on one model evaluation
+                t1 = time.perf_counter()
+                total = round_sig_figs((N_sample_draws * (t1-t0)/60.0), 2)  # Round to 2 significant figures
+
+                print('This process will take approximately ' + str(total) + ' minutes')
+
+                # Only store T and log X if an atmosphere enabled
+                if (disable_atmosphere == False):
+
+                    # Find size of mixing ratio field (same as temperature field)
+                    N_species, N_D, N_sectors, N_zones = np.shape(atmosphere['X'])
+
+                    # Create arrays to store sampled retrieval outputs
+                    T_stored = np.zeros(shape=(N_sample_draws, N_D, N_sectors, N_zones))
+                    log_X_stored = np.zeros(shape=(N_sample_draws, N_species, N_D, N_sectors, N_zones))
+
+                spectrum_stored = np.zeros(shape=(N_sample_draws, len(wl)))
+
+                if model['high_res_method'] is None:
+                    ymodel_samples = np.zeros(shape=(N_sample_draws, len(ymodel)))
+
+            if (disable_atmosphere == False):
+
+                # Store temperature field and mixing ratios in sample arrays
+                T_stored[i,:,:,:] = atmosphere['T']
+                log_X_stored[i,:,:,:,:] = np.log10(atmosphere['X'])
+
+            # Store spectrum in sample array
+            spectrum_stored[i,:] = spectrum
+
+            if model['high_res_method'] is None:
+                ymodel_samples[i,:] = ymodel
+
+        # Compute 1 and 2 sigma confidence intervals for P-T and mixing ratio profiles and spectrum
+
+        # P-T profile
+        if (disable_atmosphere == False):
+            _, T_low2, T_low1, T_median, \
+            T_high1, T_high2, _ = confidence_intervals(N_sample_draws, 
+                                                       T_stored[:,:,0,0], N_D)
+        else:
+            T_low2, T_low1, T_median, T_high1, T_high2 = None, None, None, None, None
+
+        # Mixing ratio profiles
+        if (disable_atmosphere == False):
+
+            log_X_low2 = np.zeros(shape=(N_species, N_D))
+            log_X_low1 = np.zeros(shape=(N_species, N_D))
+            log_X_median = np.zeros(shape=(N_species, N_D))
+            log_X_high1 = np.zeros(shape=(N_species, N_D))
+            log_X_high2 = np.zeros(shape=(N_species, N_D))
+
+            for q in range(N_species):
+
+                _, log_X_low2[q,:], log_X_low1[q,:], \
+                log_X_median[q,:], log_X_high1[q,:], \
+                log_X_high2[q,:], _ = confidence_intervals(N_sample_draws, 
+                                                           log_X_stored[:,q,:,0,0], N_D)
+
+        else:
+
+            log_X_low2, log_X_low1, log_X_median, \
+            log_X_high1, log_X_high2 = None, None, None, None, None
+
+        # Spectrum
+        _, spec_low2, spec_low1, spec_median, \
+        spec_high1, spec_high2, _ = confidence_intervals(N_sample_draws, 
+                                                         spectrum_stored, len(wl))
+
+        # Add this phase to output lists
+        all_T_low2.append(T_low2)
+        all_T_low1.append(T_low1)
+        all_T_median.append(T_median)
+        all_T_high1.append(T_high1)
+        all_T_high2.append(T_high2)
+
+        all_log_X_low2.append(log_X_low2)
+        all_log_X_low1.append(log_X_low1)
+        all_log_X_median.append(log_X_median)
+        all_log_X_high1.append(log_X_high1)
+        all_log_X_high2.append(log_X_high2)
+
+        all_spec_low2.append(spec_low2)
+        all_spec_low1.append(spec_low1)
+        all_spec_median.append(spec_median)
+        all_spec_high1.append(spec_high1)
+        all_spec_high2.append(spec_high2)
         
-    # P-T profile
-    if (disable_atmosphere == False):
-        _, T_low2, T_low1, T_median, \
-        T_high1, T_high2, _ = confidence_intervals(N_sample_draws, 
-                                                T_stored[:,:,0,0], N_D)
-    else:
-        T_low2, T_low1, T_median, T_high1, T_high2 = None, None, None, None, None
+        all_T_best.append(T_best)
+        all_spectrum_best.append(spectrum_best)
+        all_ymodel_best.append(ymodel_best)
 
-    # Mixing ratio profiles
-    if (disable_atmosphere == False):
-
-        log_X_low2 = np.zeros(shape=(N_species, N_D))
-        log_X_low1 = np.zeros(shape=(N_species, N_D))
-        log_X_median = np.zeros(shape=(N_species, N_D))
-        log_X_high1 = np.zeros(shape=(N_species, N_D))
-        log_X_high2 = np.zeros(shape=(N_species, N_D))
-
-        for q in range(N_species):
-
-            _, log_X_low2[q,:], log_X_low1[q,:], \
-            log_X_median[q,:], log_X_high1[q,:], \
-            log_X_high2[q,:], _ = confidence_intervals(N_sample_draws, 
-                                                    log_X_stored[:,q,:,0,0], N_D)
-            
-    else:
-
-        log_X_low2, log_X_low1, log_X_median, \
-        log_X_high1, log_X_high2 = None, None, None, None, None
+        all_ymodel_samples.append(ymodel_samples)
     
-    # Spectrum
-    _, spec_low2, spec_low1, spec_median, \
-    spec_high1, spec_high2, _ = confidence_intervals(N_sample_draws, 
-                                                     spectrum_stored, len(wl))
-    
-    return T_low2, T_low1, T_median, T_high1, T_high2, \
-           log_X_low2, log_X_low1, log_X_median, log_X_high1, log_X_high2, \
-           spec_low2, spec_low1, spec_median, spec_high1, spec_high2, \
-           T_best, spectrum_best, ymodel_best, ymodel_samples
+    return all_T_low2, all_T_low1, all_T_median, all_T_high1, all_T_high2, \
+           all_log_X_low2, all_log_X_low1, all_log_X_median, all_log_X_high1, all_log_X_high2, \
+           all_spec_low2, all_spec_low1, all_spec_median, all_spec_high1, all_spec_high2, \
+           all_T_best, all_spectrum_best, all_ymodel_best, all_ymodel_samples
 
 
 def get_retrieved_atmosphere(planet, model, P, P_ref_set = 10, R_p_ref_set = None, 

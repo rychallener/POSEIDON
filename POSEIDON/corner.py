@@ -904,10 +904,13 @@ def cornerplot(results, span=None, quantiles=[0.1587, 0.5, 0.8413],
     return (fig, axes)
 
 
-def generate_cornerplot(planet, model, params_to_plot = None, 
+def generate_cornerplot(planet, model, N_phase = 1,
+                        params_to_plot = None, 
                         retrieval_name = None, true_vals = None,
-                        colour_scheme = '#984ea3', span = None, corner_name = None,
-                        two_sigma_upper_limits = [], two_sigma_lower_limits = [],
+                        colour_scheme = '#984ea3', span = None,
+                        corner_name = None,
+                        two_sigma_upper_limits = [],
+                        two_sigma_lower_limits = [],
                         N_bins = 30,
                         ):
     '''
@@ -958,7 +961,25 @@ def generate_cornerplot(planet, model, params_to_plot = None,
         # Unpack model properties
         model_name = model['model_name']
         param_names = model['param_names']
-        n_params = len(param_names)
+        multiphase_shared_params = model['multiphase_shared_params']
+
+        # Identify full param names list from number of phases and
+        # shared parameters
+        if N_phase > 1:
+            shared_param_idx = []
+            for p in multiphase_shared_params:
+                midx = np.where(p == param_names)[0][0]
+                shared_param_idx.append(midx)
+
+            nonshared_param_idx = np.delete(np.arange(len(param_names)),
+                                            shared_param_idx)
+
+            nonshared_param_names = param_names[nonshared_param_idx]
+
+            param_names = np.concatenate((param_names,
+                                          np.tile(nonshared_param_names, N_phase-1)))
+            
+        n_params = len(param_names) 
 
         if (retrieval_name is None):
             retrieval_name = model_name
