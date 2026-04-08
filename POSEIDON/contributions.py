@@ -3213,20 +3213,28 @@ def photometric_contribution_function(wl, P, Contribution,
 
     wl_max = np.max(wl)
 
-    if binsize == 0:
-        binsize = np.max(np.diff(wl))
+    # If binsize is just a number, make the bins
+    if isinstance(binsize, float) or isinstance(binsize, int):
+        if binsize == 0:
+            binsize = np.max(np.diff(wl))
 
-    # Bin Stuff from minimum wavelength to maximum wavelength by 0.1 
-    bins = np.arange(wl_min,wl_max+binsize,binsize)
+        # Bin Stuff from minimum wavelength to maximum wavelength by 0.1 
+        bins = np.arange(wl_min,wl_max+binsize,binsize)
 
-    # Replace first bin with actual wl_min 
-    if treat_wlmin_as_zero == True:
-        bins[0] = np.min(wl)
+        # Replace first bin with actual wl_min 
+        if treat_wlmin_as_zero == True:
+            bins[0] = np.min(wl)
 
-    # Make it so the last bin includes the max wavelength (if not it will be a separate bin)
-    bins[-1] += binsize
-    bin_indices = np.digitize(wl, bins)
-    bins[-1] -= binsize
+        # Make it so the last bin includes the max wavelength (if not it will be a separate bin)
+        bins[-1] += binsize
+        bin_indices = np.digitize(wl, bins)
+        bins[-1] -= binsize
+    # Otherwise, use the bins supplied by the user
+    else:
+        bins = np.copy(binsize)
+        bins[-1] += np.diff(binsize)[-1]
+        bin_indices = np.digitize(wl, bins)
+        bins[-1] -= np.diff(binsize)[-1]
 
     bincount = np.bincount(bin_indices)
     
