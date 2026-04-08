@@ -77,6 +77,10 @@ def run_retrieval(planet, star, model, opac, data_objs, priors, wl, P,
         R_s = star['R_s']
         stellar_interp_backend = star['stellar_interp_backend']
 
+    # Turn data into a list (backwards compatibility)
+    if type(data_objs) == type(dict):
+        data_objs = [data_objs]
+
     # Check that one of the two reference parameters has been provided by the user
     if ((reference_parameter == 'R_p_ref') and (P_ref is None)):
         raise Exception("Error: Must provide P_ref when R_p_ref is a free parameter.")
