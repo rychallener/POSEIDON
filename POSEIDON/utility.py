@@ -1738,13 +1738,11 @@ def write_MultiNest_results(planet, model, data, retrieval_name,
 
     # Unpack data properties
     if model['high_res_method'] is None:
-        err_data = np.concatenate([a['err_data'] for a in data])
-        ydata = np.concatenate([a['ydata'] for a in data])
-        instruments = np.concatenate([a['instruments'] for a in data])
-        datasets = np.concatenate([a['datasets'] for a in data])
+        all_instruments = np.concatenate([a['instruments'] for a in data])
+        all_datasets = np.concatenate([a['datasets'] for a in data])
     else:
-        instruments = None
-        datasets = None
+        all_instruments = None
+        all_datasets = None
 
 
     # Unpack model properties
@@ -1769,36 +1767,47 @@ def write_MultiNest_results(planet, model, data, retrieval_name,
     # Store best-fitting reduced chi-squared
     max_likelihood = best_fit['log_likelihood']
     best_fit_params = best_fit['parameters']
+
+    # Insert shared parameters (if any)
+    best_fit_params = apply_shared_params(best_fit_params, N_phase,
+                                          N_params_cum[-1],
+                                          shared_param_idx=shared_param_idx)
+                         
     
     if (model['high_res_method'] is None):
-
-        # Load values for error inflation parameters (if included in model)
-        _, _, _, _, _, _, _, \
-            err_inflation_params, _ = split_params(best_fit_params, N_params_cum)
-      
-        # Calculate the normalisation term for the log-likelihood
-        if (error_inflation == None):
-            norm_log = (-0.5*np.log(2.0*np.pi*err_data*err_data)).sum()
-        else:
-            if len(ymodel_best) > 0:
-                raise Exception("Error inflation not yet supported in multiphase retrievals.")
-            if (error_inflation == 'Line15'):
-                err_eff_sq = (err_data*err_data + np.power(10.0, err_inflation_params[0]))
-                norm_log = (-0.5*np.log(2.0*np.pi*err_eff_sq)).sum()
-            elif (error_inflation == 'Piette20'):
-                err_eff_sq = (err_data*err_data + (err_inflation_params[0]*ymodel_best)**2)
-                norm_log = (-0.5*np.log(2.0*np.pi*err_eff_sq)).sum()
-            elif (('Line15' in error_inflation) and ('Piette20' in error_inflation)):
-                err_eff_sq = (err_data*err_data + np.power(10.0, err_inflation_params[0]) + 
-                            ((err_inflation_params[1]*ymodel_best)**2))
-                norm_log = (-0.5*np.log(2.0*np.pi*err_eff_sq)).sum()
+        norm_log = 0.0
         
+        for idata, d in enumerate(data):
+            # Best fitting params for this spectrum
+            m_best_fit_params = phase_cube(best_fit_params, idata, N_params_cum[-1])
+
+            err_data = d['err_data']
+            
+            # Load values for error inflation parameters (if included in model)
+            _, _, _, _, _, _, _, \
+                err_inflation_params, _ = split_params(m_best_fit_params, N_params_cum)
+
+            # Calculate the normalisation term for the log-likelihood
+            if (error_inflation == None):
+                norm_log += (-0.5*np.log(2.0*np.pi*err_data*err_data)).sum()
+            else:
+                if (error_inflation == 'Line15'):
+                    err_eff_sq = (err_data*err_data + np.power(10.0, err_inflation_params[0]))
+                    norm_log += (-0.5*np.log(2.0*np.pi*err_eff_sq)).sum()
+                elif (error_inflation == 'Piette20'):
+                    err_eff_sq = (err_data*err_data + (err_inflation_params[0]*ymodel_best[idata])**2)
+                    norm_log += (-0.5*np.log(2.0*np.pi*err_eff_sq)).sum()
+                elif (('Line15' in error_inflation) and ('Piette20' in error_inflation)):
+                    err_eff_sq = (err_data*err_data + np.power(10.0, err_inflation_params[0]) + 
+                                ((err_inflation_params[1]*ymodel_best[idata])**2))
+                    norm_log += (-0.5*np.log(2.0*np.pi*err_eff_sq)).sum()
+
         # Calculate the best-fitting model chi-squared    
         best_chi_square = -2.0 * (max_likelihood - norm_log)
 
         # Check for N_params >= N_data, for which chi^2_r is undefined
-        if ((len(ydata) - n_params) > 0):
-            dof = (len(ydata) - n_params)  
+        if ((len(all_ydata) - n_params) > 0):
+            dof = (len(all_ydata) - n_params)  
             reduced_chi_square = best_chi_square/dof
         else:
             dof = np.nan
@@ -1820,7 +1829,7 @@ def write_MultiNest_results(planet, model, data, retrieval_name,
     write_summary_file(results_prefix, planet_name, retrieval_name, 
                        sampling_algorithm, n_params, N_live, ev_tol, param_names, 
                        stats, ln_Z, ln_Z_err, reduced_chi_square, best_chi_square,
-                       dof, best_fit_params, wl, R, instruments, datasets,
+                       dof, best_fit_params, wl, R, all_instruments, all_datasets,
                        radius_unit, spectrum_type)
 
 
