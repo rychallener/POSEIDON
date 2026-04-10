@@ -15,6 +15,7 @@ from spectres import spectres
 from scipy.interpolate import interp1d as Interp
 
 from .parameters import split_params
+from .multiphase import apply_shared_params, phase_cube
 
 def create_directories(base_dir, planet_name):
     ''' 
