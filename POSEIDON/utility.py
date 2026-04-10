@@ -1768,7 +1768,8 @@ def write_MultiNest_results(planet, model, data, retrieval_name,
     
     # Store best-fitting reduced chi-squared
     max_likelihood = best_fit['log_likelihood']
-    best_fit_params = best_fit['parameters']
+    best_fit_params = np.copy(best_fit['parameters'])
+    best_fit_params_multinest = best_fit['parameters'] # Need this for printing
 
     # Insert shared parameters (if any)
     best_fit_params = apply_shared_params(best_fit_params, N_phase,
@@ -1828,11 +1829,13 @@ def write_MultiNest_results(planet, model, data, retrieval_name,
     write_samples_file(samples, param_names, n_params, samples_prefix)
             
     # Write POSEIDON retrieval summary file
-    write_summary_file(results_prefix, planet_name, retrieval_name, 
-                       sampling_algorithm, n_params, N_live, ev_tol, param_names, 
-                       stats, ln_Z, ln_Z_err, reduced_chi_square, best_chi_square,
-                       dof, best_fit_params, wl, R, all_instruments, all_datasets,
-                       radius_unit, spectrum_type)
+    write_summary_file(results_prefix, planet_name, retrieval_name,
+                       sampling_algorithm, n_params, N_live, ev_tol,
+                       param_names, stats, ln_Z, ln_Z_err,
+                       reduced_chi_square, best_chi_square, dof,
+                       best_fit_params_multinest, wl, R,
+                       all_instruments, all_datasets, radius_unit,
+                       spectrum_type)
 
 
 def get_vmr(name, mol, planet_name):
