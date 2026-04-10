@@ -1740,7 +1740,8 @@ def write_MultiNest_results(planet, model, data, retrieval_name,
     # Unpack data properties
     if model['high_res_method'] is None:
         all_instruments = np.concatenate([a['instruments'] for a in data])
-        all_datasets = np.concatenate([a['datasets'] for a in data])
+        all_datasets    = np.concatenate([a['datasets']    for a in data])
+        all_ydata       = np.concatenate([a['ydata']       for a in data])
     else:
         all_instruments = None
         all_datasets = None
