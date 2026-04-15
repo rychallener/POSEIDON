@@ -1901,7 +1901,6 @@ def profiles(P, R_p, g_0, PT_profile, X_profile, PT_state, P_ref, R_p_ref,
         
         # Profile requires P3 > P2 and P3 > P1, reject otherwise
         if ((log_P3 < log_P2) or (log_P3 < log_P1)):
-            print("Atmosphere non-physical: bad parameters")
             # Quit computations if model rejected
             return 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, False
         
@@ -2082,9 +2081,9 @@ def profiles(P, R_p, g_0, PT_profile, X_profile, PT_state, P_ref, R_p_ref,
                                bulk_species, He_fraction)
 
     
-    # Check if any mixing ratios are negative (i.e. trace species sum to > 1, so bulk < 0)
+    # Check if any mixing ratios are negative (i.e. trace species sum
+    # to > 1, so bulk < 0)
     if (np.any(X[0,:,:,:] < 0.0)): 
-        print("Atmosphere non-physical: negative abundances")
         # Quit computations if model rejected
         return 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, False
 
@@ -2126,7 +2125,6 @@ def profiles(P, R_p, g_0, PT_profile, X_profile, PT_state, P_ref, R_p_ref,
 
      # Check if any of the values in r are negative
     if (np.any(r < 0.0)): 
-        print("Atmosphere non-physical: negative radii")
         # Quit computations if model rejected
         return 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, False
 

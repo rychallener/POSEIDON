@@ -620,7 +620,6 @@ def PyMultiNest_retrieval(planet, star, model, opac, data_objs, prior_types,
     Main function for conducting atmospheric retrievals with PyMultiNest.
     
     '''
-    st = time.time()
     # Check for multiphase retrieval
     N_phase = len(data_objs)
         
@@ -1120,31 +1119,19 @@ def PyMultiNest_retrieval(planet, star, model, opac, data_objs, prior_types,
 
     # A wrapper for calling Loglikelihood multiple times for multiphase retrievals
     def LogLikelihood_wrapper(cube, ndim, nparams):
-        it = time.time()
         loglikelihood = 0.0
 
         # Cube with shared parameters inserted
         scube = apply_shared_params(cube, N_phase, N_params,
                                     shared_param_idx=shared_param_idx)
 
-        #print("Set up params: {:.2f}".format(time.time() - it))
-
         for i in range(N_phase):
-            it = time.time()
             istart =  i      * N_params
             iend   = (i + 1) * N_params
             pcube = scube[istart:iend]
             llh = LogLikelihood(pcube, ndim, nparams, i)
             loglikelihood += llh
-            #if llh < -1e90:
-                #print("Problem with {}".format(i))
-            #print("Loglikelihood {}: {} s".format(i, time.time() - it))
-            # Can stop if any of the models fail to save some time
-            #print(i, loglikelihood)
-            #if loglikelihood < -1e90:
-                #return loglikelihood
 
-        #print(loglikelihood)
         return loglikelihood
 
     # A wrapper for Prior that loops over the phases.  This function
@@ -1153,7 +1140,6 @@ def PyMultiNest_retrieval(planet, star, model, opac, data_objs, prior_types,
     # handled in Loglikelihood_wrapper()
     def Prior_wrapper(cube, ndim, nparams):
         for i in range(N_phase):
-            it = time.time()
             if i == 0:
                 istart = 0
                 iend   = mpcum[i]
@@ -1167,9 +1153,6 @@ def PyMultiNest_retrieval(planet, star, model, opac, data_objs, prior_types,
             for j,k in enumerate(range(istart, iend)):
                 cube[k] = conv[j]
 
-            #print("Prior convert {}: {:.2f} s".format(i, time.time() - it))
-
-    print("Setup PyMultiNest: {:.2f} s".format(time.time() - st))
     # Run PyMultiNest
     pymultinest.run(LogLikelihood_wrapper, Prior_wrapper, n_dims, **kwargs)
 
