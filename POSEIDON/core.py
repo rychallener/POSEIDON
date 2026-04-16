@@ -1203,9 +1203,6 @@ def check_atmosphere_physical(atmosphere, opac):
     
             # Check if minimum or maximum temperatures are outside opacity range
             if ((T_max > T_fine_max) or (T_min < T_fine_min)):
-                print("Atmosphere non-physical: Temperatures outside opac bounds")
-                print("{:.0f} K".format(T_min))
-                print("{:.0f} K".format(T_max))
                 return False
 
             else:
