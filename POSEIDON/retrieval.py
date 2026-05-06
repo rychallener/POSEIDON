@@ -70,16 +70,16 @@ def run_retrieval(planet, star, model, opac, data_objs, priors, wl, P,
     high_res_method = model['high_res_method']
     multiphase_shared_params = model['multiphase_shared_params']
 
-    N_phase = len(data_objs)
-
     # Unpack stellar properties
     if (star is not None):
         R_s = star['R_s']
         stellar_interp_backend = star['stellar_interp_backend']
 
     # Turn data into a list (backwards compatibility)
-    if type(data_objs) == type(dict):
+    if type(data_objs) == type(dict()):
         data_objs = [data_objs]
+
+    N_phase = len(data_objs)
 
     # Check that one of the two reference parameters has been provided by the user
     if ((reference_parameter == 'R_p_ref') and (P_ref is None)):
@@ -201,15 +201,25 @@ def run_retrieval(planet, star, model, opac, data_objs, priors, wl, P,
             spec_median, spec_high1, \
             spec_high2, T_best, \
             spectrum_best, ymodel_best, \
-            ymodel_samples = retrieved_samples(planet, star, model, opac, data_objs,
-                                               retrieval_name, wl, P, P_ref, R_p_ref,
-                                               P_param_set, He_fraction, N_slice_EM, 
-                                               N_slice_DN, spectrum_type, T_phot_grid, 
-                                               T_het_grid, log_g_phot_grid,
-                                               log_g_het_grid, I_phot_grid, 
-                                               I_het_grid, y_p, F_s_obs,
-                                               constant_gravity, chemistry_grid,
-                                               N_output_samples, multiphase_shared_params)
+            ymodel_samples = retrieved_samples(planet, star, model,
+                                               opac, data_objs,
+                                               retrieval_name, wl, P,
+                                               P_ref, R_p_ref,
+                                               P_param_set,
+                                               He_fraction,
+                                               N_slice_EM, N_slice_DN,
+                                               spectrum_type,
+                                               T_phot_grid,
+                                               T_het_grid,
+                                               log_g_phot_grid,
+                                               log_g_het_grid,
+                                               I_phot_grid,
+                                               I_het_grid, y_p,
+                                               F_s_obs,
+                                               constant_gravity,
+                                               chemistry_grid,
+                                               N_output_samples,
+                                               multiphase_shared_params)
 
             # Write POSEIDON retrieval output files
             # Note: this function doesn't handle ymodel_best correctly for
@@ -227,7 +237,8 @@ def run_retrieval(planet, star, model, opac, data_objs, priors, wl, P,
                     phase_name = retrieval_name
                 
                 write_retrieved_spectrum(phase_name, wl, spec_low2[i], 
-                                         spec_low1[i], spec_median[i], spec_high1[i], spec_high2[i])
+                                         spec_low1[i], spec_median[i],
+                                         spec_high1[i], spec_high2[i])
 
                 # Save ymodel samples
                 if (save_ymodel == True):
